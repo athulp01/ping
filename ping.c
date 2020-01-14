@@ -17,8 +17,9 @@
 #define PORT 2020
 
 int trans_count, recv_count;    //packet count
+long tot_time;
 double rtt_min = INT32_MAX, rtt_max;    //keep track of number of echo request send
-char ip_addr[20];   //ip addr in format a.b.c.d
+char ip_addr[20] = "Wrote by Athul P";   //ip addr in format a.b.c.d
 
 
 struct icmp_echo_packet {
@@ -26,10 +27,11 @@ struct icmp_echo_packet {
     char data[PACKET_LENGTH - sizeof(struct icmphdr)];  //fill the data part with random data
 };
 
+
 void sigint_handler() {     //print the statistics when pressed ctrl+c
     printf("\n--- %s ping statistics ---\n", ip_addr);
     printf("%d packets transmitted, %d received, %3.1f %% packet loss\n", trans_count, recv_count, (float)(trans_count - recv_count)/trans_count*100.0);
-    printf("rtt min/max = %f/%f ms\n", rtt_min/1000, rtt_max/1000);
+    printf("rtt min/max/avg = %f/%f/%ld ms\n", rtt_min/1000, rtt_max/1000, tot_time/recv_count);
     exit(0);
 }
 
@@ -55,6 +57,7 @@ void display_stat(void *buf, int bytes, long *rtt) {
 	struct iphdr *ip = buf;  
 	struct icmphdr *icmp = buf + ip->ihl*4;   //extract the icmp section, ihl is the ip header length in 32 bit words
     
+    tot_time += *rtt/1000;
     rtt_min = rtt_min<*rtt?rtt_min:*rtt;
     rtt_max = rtt_max<*rtt?*rtt:rtt_max;
 
@@ -89,7 +92,7 @@ void send_echo(const int *raw_socket_fd, struct sockaddr_in *target_addr) {
 
     if(sendto(*raw_socket_fd, packet, sizeof(*packet),0,(struct sockaddr*)target_addr,sizeof(*target_addr)) == -1)
         perror("Error sending ICMP packet\n");
-    int timeout = 3; //3 seconds
+    int timeout = 3; //set 3 second timeout
     time_t start = time(NULL);
     do {
         bytes = recvfrom(*raw_socket_fd, buf, sizeof(buf), 0, (struct sockaddr*)&recv_addr, &recv_len);
@@ -114,6 +117,10 @@ int main(int argc, char **argv) {
     in_addr_t res = inet_addr(argv[1]);
     if(res == INADDR_NONE) {
         struct hostent *tmp = gethostbyname(argv[1]);
+        if(tmp == NULL) {
+            perror("Host not found\n");
+            return 1;
+        }
         res = *(long*)tmp->h_addr_list[0];
     }
     int ttl = 100;  //time to live for the icmp packet
@@ -133,7 +140,7 @@ int main(int argc, char **argv) {
     printf("PING %s with %d bytes of data\n", ip_addr, PACKET_LENGTH);
     while(1) {
         send_echo(&raw_socket_fd, &target_addr);
-        sleep(1);
+        sleep(1);   
     }
 
     return 0;

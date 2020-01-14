@@ -1,17 +1,17 @@
-#include <sys/socket.h>
+#include <sys/socket.h> //for raw socket
 #include <netinet/in.h>
-#include <netinet/ip_icmp.h>
-#include <unistd.h>
+#include <netinet/ip_icmp.h>    //icmp header
+#include <unistd.h>     //sleep
 #include <sys/types.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/time.h>
-#include <netinet/ip.h>
+#include <arpa/inet.h>  
+#include <stdlib.h> //perror
+#include <stdio.h>  //printf
+#include <string.h> //bzero
+#include <sys/time.h>   //gettimetoday
+#include <netinet/ip.h> //ip header
 #include <sys/signal.h>
-#include <netdb.h>
-#include <time.h>
+#include <netdb.h>  //gethostbyname
+#include <time.h>   //time
 
 #define PACKET_LENGTH 64 // send 64 bytes of data
 #define PORT 2020

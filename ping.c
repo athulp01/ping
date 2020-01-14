@@ -19,7 +19,7 @@
 int trans_count, recv_count;    //packet count
 long tot_time;
 double rtt_min = INT32_MAX, rtt_max;    //keep track of number of echo request send
-char ip_addr[20] = "Wrote by Athul P";   //ip addr in format a.b.c.d
+char ip_addr[20];   //ip addr in format a.b.c.d
 
 
 struct icmp_echo_packet {
@@ -36,17 +36,17 @@ void sigint_handler() {     //print the statistics when pressed ctrl+c
 }
 
 unsigned short checksum(void *b, int len) {
-    unsigned short *buf = b; 
+    unsigned short *buf = b;    //unsigned short is of 16 bit
     unsigned int sum=0; 
     unsigned short result; 
   
     for ( sum = 0; len > 1; len -= 2 ) 
-        sum += *buf++; 
+        sum += *buf++;  //add all 16bit words
     if ( len == 1 ) 
-        sum += *(unsigned char*)buf; 
-    sum = (sum >> 16) + (sum & 0xFFFF); 
-    sum += (sum >> 16); 
-    result = ~sum; 
+        sum += *(unsigned char*)buf; //in case of odd number of words
+    sum = (sum >> 16) + (sum & 0xFFFF);     //do carry wrap around
+    sum += (sum >> 16);     //add remaining carry
+    result = ~sum;      //take ones complement
     return result; 
 } 
 
@@ -84,6 +84,7 @@ void send_echo(const int *raw_socket_fd, struct sockaddr_in *target_addr) {
     packet->hdr.un.echo.id = 8080;
     packet->hdr.un.echo.sequence = ++trans_count;   //incremetn the transmitted packet count
     packet->hdr.checksum = checksum(packet, sizeof(packet));
+
 
     int recv_len = sizeof(recv_addr), bytes;
     struct timeval sendt, recvt;

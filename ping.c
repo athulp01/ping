@@ -11,6 +11,7 @@
 #include <netinet/ip.h>
 #include <sys/signal.h>
 #include <netdb.h>
+#include <time.h>
 
 #define PACKET_LENGTH 64 // send 64 bytes of data
 #define PORT 2020
@@ -18,6 +19,7 @@
 int trans_count, recv_count;    //packet count
 double rtt_min = INT32_MAX, rtt_max;    //keep track of number of echo request send
 char ip_addr[20];   //ip addr in format a.b.c.d
+
 
 struct icmp_echo_packet {
     struct icmphdr hdr;     //icmp header
@@ -46,14 +48,8 @@ unsigned short checksum(void *b, int len) {
     return result; 
 } 
 
-in_addr_t getip(char *arg) {
-    in_addr_t res = inet_addr(arg);
-    if(res == INADDR_NONE) {
-        struct hostent *tmp = gethostbyname(arg);
-        return *(long*)tmp->h_addr_list[0];
-    }else return res;
 
-} 
+
 //Called when a packet is received
 void display_stat(void *buf, int bytes, long *rtt) {
 	struct iphdr *ip = buf;  
@@ -62,20 +58,22 @@ void display_stat(void *buf, int bytes, long *rtt) {
     rtt_min = rtt_min<*rtt?rtt_min:*rtt;
     rtt_max = rtt_max<*rtt?*rtt:rtt_max;
 
-	if (icmp->un.echo.id == 8080 && icmp->code == 0 && icmp->type == 0)    //ensure that the given packet is of type ECHO_REPLY
-	{
-        recv_count++;   //acknowledge the received packet
-        printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms\n", bytes - 20, ip_addr,icmp->un.echo.sequence, 100, (*rtt)/1000);
-	}else {
-        printf("%d %d %d %d", icmp->un.echo.id, icmp->code, icmp->type, getpid() );
-    }
+    recv_count++;   //acknowledge the received packet
+    printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms\n", bytes - 20, ip_addr,icmp->un.echo.sequence, 100, (*rtt)/1000);
+}
+
+//check if the received packet is of type ECHO_REPLY and hava the same identifier
+int verify_packet(void *buf, int bytes) {
+    struct iphdr *ip = buf;  
+	struct icmphdr *icmp = buf + ip->ihl*4;
+    return (icmp->un.echo.id == 8080 && icmp->code == 0 && icmp->type == 0);
 }
 
 void send_echo(const int *raw_socket_fd, struct sockaddr_in *target_addr) {
     struct icmp_echo_packet *packet = (struct icmp_echo_packet*)malloc(sizeof(struct icmp_echo_packet));
     struct sockaddr_in recv_addr;
     unsigned char buf[1024];    //single byte buffer to store the received data
-    bzero(packet, sizeof(struct icmp_echo_packet));
+    bzero(packet, sizeof(struct icmp_echo_packet));     //zero out the packet
     bzero(buf, sizeof(buf));    //zero out the buffer
 
     packet->hdr.type = ICMP_ECHO;   //set the message type
@@ -91,10 +89,14 @@ void send_echo(const int *raw_socket_fd, struct sockaddr_in *target_addr) {
 
     if(sendto(*raw_socket_fd, packet, sizeof(*packet),0,(struct sockaddr*)target_addr,sizeof(*target_addr)) == -1)
         perror("Error sending ICMP packet\n");
-    do bytes = recvfrom(*raw_socket_fd, buf, sizeof(buf), 0, (struct sockaddr*)&recv_addr, &recv_len);
-    while(recv_addr.sin_addr.s_addr != target_addr->sin_addr.s_addr);
-    if(bytes == 0) perror("packet not received\n");
+    int timeout = 3; //3 seconds
+    time_t start = time(NULL);
+    do {
+        bytes = recvfrom(*raw_socket_fd, buf, sizeof(buf), 0, (struct sockaddr*)&recv_addr, &recv_len);
+        if(time(NULL) - start > timeout) return;
+    }while(!verify_packet(buf, bytes));
 
+    if(bytes == 0) perror("packet not received\n");
     gettimeofday(&recvt, NULL);     //stop the timer and calculate rtt
 
     free(packet);
@@ -111,13 +113,12 @@ int main(int argc, char **argv) {
     }
     in_addr_t res = inet_addr(argv[1]);
     if(res == INADDR_NONE) {
-        printf("fd\n");
         struct hostent *tmp = gethostbyname(argv[1]);
         res = *(long*)tmp->h_addr_list[0];
     }
     int ttl = 100;  //time to live for the icmp packet
-    struct timeval recv_tout;   //set the receive timeout to  be 10 seconds
-    recv_tout.tv_sec = 3;
+    struct timeval recv_tout;   //set the receive timeout to  be 1 seconds
+    recv_tout.tv_sec = 2;
     recv_tout.tv_usec = 0;
     signal(SIGINT, sigint_handler);
     const int raw_socket_fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -129,7 +130,7 @@ int main(int argc, char **argv) {
     target_addr.sin_family = AF_INET;
     target_addr.sin_port = PORT;
     target_addr.sin_addr.s_addr = res;
-
+    printf("PING %s with %d bytes of data\n", ip_addr, PACKET_LENGTH);
     while(1) {
         send_echo(&raw_socket_fd, &target_addr);
         sleep(1);
